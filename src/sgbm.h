@@ -1,8 +1,46 @@
 
 #include "opencv2/opencv.hpp"
 
-typedef std::vector<std::vector<std::vector<unsigned long> > > cost_3d_array;
-typedef std::vector<std::vector<std::vector<std::vector<unsigned long> > > > cost_4d_array;
+class cost_3d_array
+{
+public:
+    cost_3d_array() : rows_(0), cols_(0), drange_(0), data_(nullptr) {
+    }
+    
+    void reset(int rows, int cols, int drange) {
+        if (data_)
+            delete [] data_;
+        
+        rows_ = rows;
+        cols_ = cols;
+        drange_ = drange;
+        
+        data_ = new unsigned long[rows * cols * drange];
+        //memset(data_, 0, sizeof(unsigned long) * rows * cols * drange);
+    }
+    
+    virtual ~cost_3d_array() {
+        if (data_)
+            delete [] data_;
+    }
+    
+    unsigned long& data(int row, int col, int d) {
+        return data_[(cols_ * row + col) * drange_ + d];
+    }
+    
+    unsigned long* ptr(int row, int col) const {
+        return &(data_[(cols_ * row + col) * drange_]);
+    }
+
+protected:
+    int rows_;
+    int cols_;
+    int drange_;
+    
+    unsigned long *data_;
+};
+
+typedef std::vector<cost_3d_array> cost_4d_array;
 
 class ScanLine {
 public:
@@ -18,6 +56,7 @@ public:
 class ScanLines8 {
 public:
   ScanLines8() {
+    this->path8.push_back(ScanLine(0, 1, true));
     this->path8.push_back(ScanLine(1, 1, true));
     this->path8.push_back(ScanLine(1, 0, true));
     this->path8.push_back(ScanLine(1, -1, true));
@@ -25,7 +64,6 @@ public:
     this->path8.push_back(ScanLine(-1, -1, false));
     this->path8.push_back(ScanLine(-1, 0, false));
     this->path8.push_back(ScanLine(-1, 1, false));
-    this->path8.push_back(ScanLine(0, 1, true));
   }
   
   std::vector<ScanLine> path8;
@@ -64,5 +102,57 @@ public:
   cost_3d_array pix_cost;
   cost_4d_array agg_cost;
   cost_3d_array sum_cost;
+  std::vector<cv::Mat> agg_min;
   ScanLines8 scanlines;
 };
+
+
+struct StereoSGBMParams
+{
+    StereoSGBMParams()
+    {
+        minDisparity = numDisparities = 0;
+        SADWindowSize = 0;
+        P1 = P2 = 0;
+        disp12MaxDiff = 0;
+        preFilterCap = 0;
+        uniquenessRatio = 0;
+        speckleWindowSize = 0;
+        speckleRange = 0;
+        mode = cv::StereoSGBM::MODE_SGBM;
+    }
+    
+    StereoSGBMParams( int _minDisparity, int _numDisparities, int _SADWindowSize,
+                     int _P1, int _P2, int _disp12MaxDiff, int _preFilterCap,
+                     int _uniquenessRatio, int _speckleWindowSize, int _speckleRange,
+                     int _mode )
+    {
+        minDisparity = _minDisparity;
+        numDisparities = _numDisparities;
+        SADWindowSize = _SADWindowSize;
+        P1 = _P1;
+        P2 = _P2;
+        disp12MaxDiff = _disp12MaxDiff;
+        preFilterCap = _preFilterCap;
+        uniquenessRatio = _uniquenessRatio;
+        speckleWindowSize = _speckleWindowSize;
+        speckleRange = _speckleRange;
+        mode = _mode;
+    }
+    
+    int minDisparity;
+    int numDisparities;
+    int SADWindowSize;
+    int preFilterCap;
+    int uniquenessRatio;
+    int P1;
+    int P2;
+    int speckleWindowSize;
+    int speckleRange;
+    int disp12MaxDiff;
+    int mode;
+};
+
+void computeDisparitySGBM(const cv::Mat& img1, const cv::Mat& img2,
+                                 cv::Mat& disp1, const StereoSGBMParams& params,
+                                 cv::Mat& buffer );

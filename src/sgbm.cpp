@@ -81,34 +81,20 @@ void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
 void Sgbm::reset_buffer() 
 {
 
-  *(this->census_l) = 0;
-  *(this->census_r) = 0;
+  *(census_l) = 0;
+  *(census_r) = 0;
 
   // Resize vector for Pix Cost
-  this->pix_cost.resize(this->rows);
-  this->sum_cost.resize(this->rows);
-  for (int row = 0; row < this->rows; row++) {
-    this->pix_cost[row].resize(this->cols);
-    this->sum_cost[row].resize(this->cols);
-    for (int col = 0; col < this->cols; col++) {
-      this->pix_cost[row][col].resize(this->d_range, 0x0000);
-      this->sum_cost[row][col].resize(this->d_range, 0x0000);
-    }
-  }
+  pix_cost.reset(rows, cols, d_range);
+  sum_cost.reset(rows, cols, d_range);
 
   // Resize vector for Agg Cost
-  this->agg_cost.resize(this->scanpath);
-  for (int path = 0; path < this->scanpath; path++) {
-    this->agg_cost[path].resize(this->rows);
-    for (int row = 0; row < this->rows; row++) {
-      this->agg_cost[path][row].resize(this->cols);
-      for (int col = 0; col < this->cols; col++) {
-        this->agg_cost[path][row][col].resize(this->d_range, 0x0000);
-      }
-    }
+  agg_cost.resize(scanpath);
+  agg_min.resize(scanpath);
+  for (int path = 0; path < scanpath; path++) {
+    agg_cost[path].reset(rows, cols, d_range);
+    agg_min[path] = cv::Mat::zeros(rows, cols, CV_16UC1);
   }
-
-  return;
 }
 
 void Sgbm::census_transform(cv::Mat &img, cv::Mat &census)
@@ -150,12 +136,13 @@ void Sgbm::calc_pixel_cost(cv::Mat &census_l, cv::Mat &census_r, cost_3d_array &
         if (col - d >= 0) {
           val_r = static_cast<unsigned char>(*(census_r_ptr_st + row*cols + col - d));
         }
-        pix_cost[row][col][d] = calc_hamming_dist(val_l, val_r);
+        pix_cost.data(row, col, d) = calc_hamming_dist(val_l, val_r);
       }
     }
   }
 }
 
+/// https://www.tutorialspoint.com/what-is-hamming-distance
 unsigned char Sgbm::calc_hamming_dist(unsigned char val_l, unsigned char val_r) {
 
   unsigned char dist = 0;
@@ -181,16 +168,21 @@ unsigned short Sgbm::aggregate_cost(int row, int col, int depth, int path, cost_
   int drow = this->scanlines.path8[path].drow;
 
   // Pixel matching cost for current pix.
-  unsigned long indiv_cost = pix_cost[row][col][depth];
+  unsigned long indiv_cost = pix_cost.data(row, col, depth);
 
   if (row - drow < 0 || this->rows <= row - drow || col - dcol < 0 || this->cols <= col - dcol) {
-    agg_cost[path][row][col][depth] = indiv_cost;
-    return agg_cost[path][row][col][depth];
+    agg_cost[path].data(row, col, depth) = indiv_cost;
+    return agg_cost[path].data(row, col, depth);
   }
 
-  // Depth loop for previous pix.
+    min_prev_d = agg_min[path].at<uint16_t>(row - drow, col - dcol);
+    val0 = agg_cost[path].data(row - drow, col - dcol, depth);
+    val1 = agg_cost[path].data(row - drow, col - dcol, depth - 1) + p1;
+    val2 = agg_cost[path].data(row - drow, col - dcol, depth + 1) + p1;
+    val3 = min_prev_d + p2;
+/*  // Depth loop for previous pix.
   for (int dd = 0; dd < this->d_range; dd++) {
-    unsigned long prev = agg_cost[path][row-drow][col-dcol][dd];
+    unsigned long prev = agg_cost[path].data(row-drow, col-dcol, dd);
     if (prev < min_prev_d) {
       min_prev_d = prev;
     }
@@ -208,24 +200,29 @@ unsigned short Sgbm::aggregate_cost(int row, int col, int depth, int path, cost_
       }            
     }
   }
-
+*/
   // Select minimum cost for current pix.
-  agg_cost[path][row][col][depth] = std::min(std::min(std::min(val0, val1), val2), val3) + indiv_cost - min_prev_d;
+  agg_cost[path].data(row, col, depth) = std::min(std::min(std::min(val0, val1), val2), val3) + indiv_cost - min_prev_d;
   //agg_cost[path][row][col][depth] = indiv_cost;
 
-  return agg_cost[path][row][col][depth];
+  return agg_cost[path].data(row, col, depth);
 }
 
 void Sgbm::aggregate_cost_for_each_scanline(cost_3d_array &pix_cost, cost_4d_array &agg_cost, cost_3d_array &sum_cost)
 {
   // Cost aggregation for positive direction.
-  for (int row = 0; row < this->rows; row++) {
-    for (int col = 0; col < this->cols; col++) {
-      for (int path = 0; path < this->scanlines.path8.size(); path++) {
+  for (int path = 0; path < this->scanlines.path8.size(); path++) {
+    for (int row = 0; row < this->rows; row++) {
+      for (int col = 0; col < this->cols; col++) {
         if (this->scanlines.path8[path].posdir) {
           //std::cout << "Pos : " << path << std::endl;
+          uint16_t& minAgg = agg_min[path].at<uint16_t>(row, col);
+          minAgg = 0xFFFF;
           for (int d = 0; d < this->d_range; d++) {
-            sum_cost[row][col][d] += aggregate_cost(row, col, d, path, pix_cost, agg_cost);
+            unsigned short a_cost = aggregate_cost(row, col, d, path, pix_cost, agg_cost);
+            if (a_cost < minAgg)
+                minAgg = a_cost;
+            sum_cost.data(row, col, d) += a_cost;
           }
         }
       }
@@ -233,13 +230,13 @@ void Sgbm::aggregate_cost_for_each_scanline(cost_3d_array &pix_cost, cost_4d_arr
   }
 
   // Cost aggregation for negative direction.
-  for (int row = this->rows - 1; 0 <= row; row--) {
-    for (int col = this->cols - 1; 0 <= col; col--) {
-      for (int path = 0; path < this->scanlines.path8.size(); path++) {
+  for (int path = 0; path < this->scanlines.path8.size(); path++) {
+    for (int row = this->rows - 1; 0 <= row; row--) {
+      for (int col = this->cols - 1; 0 <= col; col--) {
         if (!this->scanlines.path8[path].posdir) {
           //std::cout << "Neg : " << path << std::endl;
           for (int d = 0; d < this->d_range; d++) {
-            sum_cost[row][col][d] += aggregate_cost(row, col, d, path, pix_cost, agg_cost);
+            sum_cost.data(row, col, d) += aggregate_cost(row, col, d, path, pix_cost, agg_cost);
           }
         }
       }
@@ -253,9 +250,9 @@ void Sgbm::calc_disparity(cost_3d_array &sum_cost, cv::Mat &disp_img)
   for (int row = 0; row < this->rows; row++) {
     for (int col = 0; col < this->cols; col++) {
       unsigned char min_depth = 0;
-      unsigned long min_cost = sum_cost[row][col][min_depth];
+      unsigned long min_cost = sum_cost.data(row, col, min_depth);
       for (int d = 1; d < this->d_range; d++) {
-        unsigned long tmp_cost = sum_cost[row][col][d];
+        unsigned long tmp_cost = sum_cost.data(row, col, d);
         if (tmp_cost < min_cost) {
           min_cost = tmp_cost;
           min_depth = d;
