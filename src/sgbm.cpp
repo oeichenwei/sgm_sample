@@ -235,8 +235,13 @@ void Sgbm::aggregate_cost_for_each_scanline(cost_3d_array &pix_cost, cost_4d_arr
       for (int col = this->cols - 1; 0 <= col; col--) {
         if (!this->scanlines.path8[path].posdir) {
           //std::cout << "Neg : " << path << std::endl;
+          uint16_t& minAgg = agg_min[path].at<uint16_t>(row, col);
+          minAgg = 0xFFFF;
           for (int d = 0; d < this->d_range; d++) {
-            sum_cost.data(row, col, d) += aggregate_cost(row, col, d, path, pix_cost, agg_cost);
+              unsigned short a_cost = aggregate_cost(row, col, d, path, pix_cost, agg_cost);
+              if (a_cost < minAgg)
+                  minAgg = a_cost;
+              sum_cost.data(row, col, d) += a_cost;
           }
         }
       }
