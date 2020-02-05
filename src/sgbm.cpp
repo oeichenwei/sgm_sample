@@ -21,7 +21,7 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
     this->disp_img = new cv::Mat(rows, cols, CV_8UC1);
     this->p1 = p1;
     this->p2 = p2;
-    this->scanpath = 8;
+    this->scanpath = scanlines.path8.size();
     this->gauss_filt = gauss_filt;
     this->show_res = show_res;
     
@@ -180,31 +180,41 @@ void Sgbm::aggregate_cost(int row, int col, int path)
     bool isEdge = (row - drow < 0 || rows <= row - drow || col - dcol < 0 || cols <= col - dcol);
     uint16_t minAgg = 0xFFFF;
     uint16_t min_prev_d = isEdge ? 0xFFFF : agg_min[path].at<uint16_t>(row - drow, col - dcol);
-    uint16_t* p_cost = agg_cost[path].ptr(row, col);
-    for (int depth = 0; depth < d_range; depth++) {
-        // Depth loop for current pix.
+    uint16_t val3 = min_prev_d + p2;
+    uint16_t* p_agg = agg_cost[path].ptr(row, col);
+    uint16_t* p_val = agg_cost[path].ptr(row - drow, col - dcol);
+    uint16_t* p_cost = pix_cost.ptr(row, col);
+    uint16_t* p_sum = sum_cost.ptr(row, col);
+    
+    for (int depth = 0; depth < d_range; depth++, p_agg++, p_sum++, p_cost++) {
         uint16_t retval = 0;
-        uint16_t val0 = 0xFFFF;
-        uint16_t val1 = 0xFFFF;
-        uint16_t val2 = 0xFFFF;
-        uint16_t val3 = 0xFFFF;
-        // Pixel matching cost for current pix.
-        uint16_t indiv_cost = pix_cost.data(row, col, depth);
+        uint16_t indiv_cost = *p_cost;
         if (isEdge) {
             retval = indiv_cost;
         }
         else {
-            val0 = agg_cost[path].data(row - drow, col - dcol, depth);
-            val1 = (depth == 0) ? 0xFFFF : agg_cost[path].data(row - drow, col - dcol, depth - 1) + p1;
-            val2 = (depth + 1 == d_range) ? 0xFFFF :agg_cost[path].data(row - drow, col - dcol, depth + 1) + p1;
-            val3 = min_prev_d + p2;
-            
-            retval = SGBM_MIN(SGBM_MIN(SGBM_MIN(val0, val1), val2), val3) + indiv_cost - min_prev_d;
+            uint16_t val = p_val[depth];
+            uint16_t val1;
+            uint16_t val2;
+            if (depth > 0) {
+                val1 = p_val[depth - 1] + p1;
+                if (val1 < val)
+                    val = val1;
+            }
+            if (depth < d_range - 1) {
+                val2 = p_val[depth + 1] + p1;
+                if (val2 < val)
+                    val = val2;
+            }
+            if (val3 < val)
+                val = val3;
+
+            retval = val + indiv_cost - min_prev_d;
         }
-        p_cost[depth] = retval;
+        *p_agg = retval;
         if (retval < minAgg)
             minAgg = retval;
-        sum_cost.data(row, col, depth) += retval;
+        *p_sum += retval;
     }
     agg_min[path].at<uint16_t>(row, col) = minAgg;
 }

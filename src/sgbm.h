@@ -59,13 +59,13 @@ class ScanLines8 {
 public:
   ScanLines8() {
     this->path8.push_back(ScanLine(0, 1, true));
-    this->path8.push_back(ScanLine(1, 1, true));
+//    this->path8.push_back(ScanLine(1, 1, true));
     this->path8.push_back(ScanLine(1, 0, true));
-    this->path8.push_back(ScanLine(1, -1, true));
+//    this->path8.push_back(ScanLine(1, -1, true));
     this->path8.push_back(ScanLine(0, -1, false));
-    this->path8.push_back(ScanLine(-1, -1, false));
+//    this->path8.push_back(ScanLine(-1, -1, false));
     this->path8.push_back(ScanLine(-1, 0, false));
-    this->path8.push_back(ScanLine(-1, 1, false));
+//    this->path8.push_back(ScanLine(-1, 1, false));
   }
   
   std::vector<ScanLine> path8;
