@@ -3,6 +3,7 @@
 #include <fstream>
 #include <string>
 #include <stdexcept>
+#include <chrono>
 #include "opencv2/opencv.hpp"
 
 #include "sgbm.h"
@@ -63,30 +64,30 @@ void recv_console_input(std::string &left_path, std::string &right_path, int &di
   return;
 }
 
-int main(int argc, char** argv) {
-
-  std::cout << "SGBM Test Started!" << std::endl;
-
-  std::string left_path, right_path;
-  int disp_r = 256;//, p1, p2;
-
-//    left_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/left.png";
-//    right_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/right.png";
-    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-left.png";
-    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-right.png";
+int main(int argc, char** argv)
+{
+    std::cout << "SGBM Test Started!" << std::endl;
     
-  std::cout << "0. Load parameters from user." << std::endl;
-  //recv_console_input(left_path, right_path, disp_r, p1, p2);
-
-  std::cout << "1. Open and load images" << std::endl;
-  cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
-  cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
-
-  std::cout << "2. Initialize class" << std::endl;
+    std::string left_path, right_path;
+    int disp_r = 256;//, p1, p2;
     
-  Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, true);
-  cv::Mat disp;
-  sgbm.compute_disp(left, right, disp);
+    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/wall-left.png";
+    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/wall-right.png";
+    
+    std::cout << "0. Load parameters from user." << std::endl;
+    //recv_console_input(left_path, right_path, disp_r, p1, p2);
+    
+    std::cout << "1. Open and load images" << std::endl;
+    cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
+    cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
+    
+    std::cout << "2. Initialize class" << std::endl;
+    
+    Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, false);
+    cv::Mat disp;
+    
+    auto begin = std::chrono::system_clock::now();
+    sgbm.compute_disp(left, right, disp);
 
 //    int NumDisparities = 256;
 //    StereoSGBMParams params(0, NumDisparities, 8, 8 * 64, 32 * 64, 1, 63, 5, 100, 10, cv::StereoSGBM::MODE_SGBM);
@@ -94,7 +95,12 @@ int main(int argc, char** argv) {
 //    computeDisparitySGBM(left, right, disp, params, buffer);
 //    disp.convertTo(disp8, CV_8U, 255 / (NumDisparities * 16.));
 //    cv::imshow("opencv", disp8);
-//    cv::waitKey(0);
 
+    auto end = std::chrono::system_clock::now();
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+    std::cout << "3. costed time=" << milliseconds.count() << std::endl;
+
+    cv::imshow("Sgbm Result", disp);
+    cv::waitKey(0);
     return 0;
 }

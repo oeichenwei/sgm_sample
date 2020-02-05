@@ -18,7 +18,7 @@ public:
         drange_ = drange;
         
         data_ = new AGGR_DATA_TYPE[rows * cols * drange];
-        //memset(data_, 0, sizeof(unsigned long) * rows * cols * drange);
+        memset(data_, 0, sizeof(AGGR_DATA_TYPE) * rows * cols * drange);
     }
     
     virtual ~cost_3d_array() {
@@ -42,7 +42,7 @@ protected:
     AGGR_DATA_TYPE *data_;
 };
 
-typedef std::vector<cost_3d_array> cost_4d_array;
+typedef cost_3d_array* cost_4d_array;
 
 class ScanLine {
 public:
@@ -83,9 +83,9 @@ public:
 
   void compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp);
 
-  void aggregate_cost(int row, int col, int depth, int path, cost_3d_array &pix_cost, cost_4d_array &agg_cost);
+  void aggregate_cost(int row, int col, int path);
 
-  void aggregate_cost_for_each_scanline(cost_3d_array &pix_cost, cost_4d_array &agg_cost, cost_3d_array &sum_cost);
+  void aggregate_cost_for_each_scanline();
 
   void calc_disparity(cost_3d_array &sum_cost, cv::Mat &disp_img);
 
