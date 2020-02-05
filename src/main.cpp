@@ -70,10 +70,10 @@ int main(int argc, char** argv) {
   std::string left_path, right_path;
   int disp_r = 256;//, p1, p2;
 
-    left_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/left.png";
-    right_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/right.png";
-//    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-left.png";
-//    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-right.png";
+//    left_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/left.png";
+//    right_path = "/Users/wilsonc/works/3d-scanner/samples/sgbm/newDH/right.png";
+    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-left.png";
+    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-right.png";
     
   std::cout << "0. Load parameters from user." << std::endl;
   //recv_console_input(left_path, right_path, disp_r, p1, p2);

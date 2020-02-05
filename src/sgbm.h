@@ -4,6 +4,8 @@
 class cost_3d_array
 {
 public:
+    typedef uint16_t AGGR_DATA_TYPE;
+    
     cost_3d_array() : rows_(0), cols_(0), drange_(0), data_(nullptr) {
     }
     
@@ -15,7 +17,7 @@ public:
         cols_ = cols;
         drange_ = drange;
         
-        data_ = new unsigned long[rows * cols * drange];
+        data_ = new AGGR_DATA_TYPE[rows * cols * drange];
         //memset(data_, 0, sizeof(unsigned long) * rows * cols * drange);
     }
     
@@ -24,11 +26,11 @@ public:
             delete [] data_;
     }
     
-    unsigned long& data(int row, int col, int d) {
+    AGGR_DATA_TYPE& data(int row, int col, int d) {
         return data_[(cols_ * row + col) * drange_ + d];
     }
     
-    unsigned long* ptr(int row, int col) const {
+    AGGR_DATA_TYPE* ptr(int row, int col) const {
         return &(data_[(cols_ * row + col) * drange_]);
     }
 
@@ -37,7 +39,7 @@ protected:
     int cols_;
     int drange_;
     
-    unsigned long *data_;
+    AGGR_DATA_TYPE *data_;
 };
 
 typedef std::vector<cost_3d_array> cost_4d_array;
@@ -81,7 +83,7 @@ public:
 
   void compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp);
 
-  unsigned short aggregate_cost(int row, int col, int depth, int path, cost_3d_array &pix_cost, cost_4d_array &agg_cost);
+  void aggregate_cost(int row, int col, int depth, int path, cost_3d_array &pix_cost, cost_4d_array &agg_cost);
 
   void aggregate_cost_for_each_scanline(cost_3d_array &pix_cost, cost_4d_array &agg_cost, cost_3d_array &sum_cost);
 
