@@ -12,7 +12,6 @@
 
 Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
            unsigned short p2, bool gauss_filt, bool show_res)
-    : agg_cost(nullptr)
 {
     this->rows = rows;
     this->cols = cols;
@@ -35,8 +34,6 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
 
 Sgbm::~Sgbm() 
 {
-    if (agg_cost)
-        delete [] agg_cost;
 }
 
 void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
@@ -102,12 +99,9 @@ void Sgbm::reset_buffer()
     sum_cost.reset(rows, cols, d_range);
     
     // Resize vector for Agg Cost
-    if (agg_cost)
-        delete [] agg_cost;
-    agg_cost = new cost_3d_array<uint16_t>[scanpath];
     agg_min.resize(scanpath);
+    agg_cost.reset(rows, cols, d_range);
     for (int path = 0; path < scanpath; path++) {
-        agg_cost[path].reset(rows, cols, d_range);
         agg_min[path] = cv::Mat::zeros(rows, cols, CV_16UC1);
     }
 }
@@ -196,6 +190,7 @@ void Sgbm::calc_pixel_cost()
 
                     uint8_t CV_DECL_ALIGNED(32) tmp[16];
                     cv::v_store_aligned(tmp, cv::v_reinterpret_as_u8(result16));
+                    //v_reverse needs SSE3 or NEON, that can be 1x fast
                     for (int i = 0; i < 16; i++)
                         dest[i] = tmp[15 - i];
                 }
@@ -232,46 +227,91 @@ void Sgbm::aggregate_cost(int row, int col, int path)
 {
     int dcol = scanlines.path8[path].dcol;
     int drow = scanlines.path8[path].drow;
-    
     bool isEdge = (row - drow < 0 || rows <= row - drow || col - dcol < 0 || cols <= col - dcol);
     uint16_t minAgg = 0xFFFF;
     uint16_t min_prev_d = isEdge ? 0xFFFF : agg_min[path].at<uint16_t>(row - drow, col - dcol);
-    uint16_t val3 = min_prev_d + p2;
-    uint16_t* p_agg = agg_cost[path].ptr(row, col);
-    uint16_t* p_val = agg_cost[path].ptr(row - drow, col - dcol);
+    uint16_t* p_agg = agg_cost.ptr(row, col);
+    uint16_t* p_val = agg_cost.ptr(row - drow, col - dcol);
     uint8_t* p_cost = pix_cost.ptr(row, col);
     uint16_t* p_sum = sum_cost.ptr(row, col);
     
-    for (int depth = 0; depth < d_range; depth++, p_agg++, p_sum++, p_cost++) {
-        uint16_t retval = 0;
-        uint16_t indiv_cost = *p_cost;
-        if (isEdge) {
-            retval = indiv_cost;
-        }
-        else {
-            uint16_t val = p_val[depth];
-            uint16_t val1;
-            uint16_t val2;
-            if (depth > 0) {
-                val1 = p_val[depth - 1] + p1;
-                if (val1 < val)
-                    val = val1;
+#if CV_SIMD128
+    if(useSIMD_)
+    {
+        cv::v_uint16x8 val3 = cv::v_setall_u16(min_prev_d + p2);
+        const cv::v_uint16x8 vmaxf = cv::v_setall_u16(0xffff);
+        const cv::v_uint16x8 vp1 = cv::v_setall_u16(p1);
+        const cv::v_uint16x8 vmin_prev = cv::v_setall_u16(min_prev_d);
+        for (int depth = 0; depth < d_range; depth += 8, p_agg += 8, p_sum += 8, p_cost += 8) {
+            cv::v_uint16x8 retval;
+            cv::v_uint16x8 indiv_cost = cv::v_load_expand(p_cost);
+            if (isEdge) {
+                retval = indiv_cost;
+            } else {
+                retval = cv::v_setzero_u16();
+                const cv::v_uint16x8 val0 = cv::v_load_aligned(p_val + depth);
+                cv::v_uint16x8 val1, val2;
+                if (depth == 0)
+                    val1 = (val0 >> 16) | vmaxf + vp1;
+                else
+                    val1 = cv::v_load(p_val + depth - 1) + vp1;
+                
+                if (depth == d_range - 9)
+                    val2 = (val0 << 16) | vmaxf + vp1;
+                else
+                    val2 = cv::v_load(p_val + depth + 1) + vp1;
+                
+                cv::v_uint16x8 val = cv::v_min(val0, val1);
+                val = cv::v_min(val, val2);
+                val = cv::v_min(val, val3);
+                retval = val + indiv_cost - vmin_prev;
             }
-            if (depth < d_range - 1) {
-                val2 = p_val[depth + 1] + p1;
-                if (val2 < val)
-                    val = val2;
-            }
-            if (val3 < val)
-                val = val3;
-
-            retval = val + indiv_cost - min_prev_d;
+            cv::v_uint16x8 v_sum = cv::v_load_aligned(p_sum);
+            v_sum = v_sum + retval;
+            uint16_t lmin = cv::v_reduce_min(retval);
+            if (lmin < minAgg)
+                minAgg = lmin;
+            
+            cv::v_store_aligned(p_agg, retval);
+            cv::v_store_aligned(p_sum, v_sum);
         }
-        *p_agg = retval;
-        if (retval < minAgg)
-            minAgg = retval;
-        *p_sum += retval;
     }
+    else
+#endif
+    {
+        uint16_t val3 = min_prev_d + p2;
+        for (int depth = 0; depth < d_range; depth++, p_agg++, p_sum++, p_cost++) {
+            uint16_t retval = 0;
+            uint16_t indiv_cost = *p_cost;
+            if (isEdge) {
+                retval = indiv_cost;
+            }
+            else {
+                uint16_t val = p_val[depth];
+                uint16_t val1;
+                uint16_t val2;
+                if (depth > 0) {
+                    val1 = p_val[depth - 1] + p1;
+                    if (val1 < val)
+                        val = val1;
+                }
+                if (depth < d_range - 1) {
+                    val2 = p_val[depth + 1] + p1;
+                    if (val2 < val)
+                        val = val2;
+                }
+                if (val3 < val)
+                    val = val3;
+                
+                retval = val + indiv_cost - min_prev_d;
+            }
+            *p_agg = retval;
+            if (retval < minAgg)
+                minAgg = retval;
+            *p_sum += retval;
+        }
+    }
+
     agg_min[path].at<uint16_t>(row, col) = minAgg;
 }
 

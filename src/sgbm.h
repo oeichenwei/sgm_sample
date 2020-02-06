@@ -1,5 +1,6 @@
 
 #include "opencv2/opencv.hpp"
+#include <memory>
 
 template <class AGGR_DATA_TYPE>
 class cost_3d_array
@@ -16,13 +17,17 @@ public:
         cols_ = cols;
         drange_ = drange;
         
-        data_ = new AGGR_DATA_TYPE[rows * cols * drange];
+        int dataLen = rows * cols * drange * sizeof(AGGR_DATA_TYPE);
+        data_raw_ = new uint8_t[dataLen + 31];
+        data_ = (AGGR_DATA_TYPE*)((intptr_t)data_raw_ + 31 & ~intptr_t((void*)31));
         memset(data_, 0, sizeof(AGGR_DATA_TYPE) * rows * cols * drange);
     }
     
     virtual ~cost_3d_array() {
-        if (data_)
-            delete [] data_;
+        if (data_raw_)
+            delete [] data_raw_;
+        data_raw_ =  nullptr;
+        data_ = nullptr;
     }
     
     AGGR_DATA_TYPE& data(int row, int col, int d) {
@@ -38,6 +43,7 @@ protected:
     int cols_;
     int drange_;
     
+    uint8_t *data_raw_;
     AGGR_DATA_TYPE *data_;
 };
 
@@ -101,7 +107,7 @@ public:
   unsigned short p1, p2;
   cv::Mat census_l, census_r, disp_img;
   cost_3d_array<uint8_t> pix_cost;
-  cost_4d_array agg_cost;
+  cost_3d_array<uint16_t> agg_cost;
   cost_3d_array<uint16_t> sum_cost;
   std::vector<cv::Mat> agg_min;
   ScanLines8 scanlines;
