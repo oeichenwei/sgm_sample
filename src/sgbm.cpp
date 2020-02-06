@@ -343,17 +343,44 @@ void Sgbm::aggregate_cost_for_each_scanline()
 void Sgbm::calc_disparity(cv::Mat &disp_img)
 {
     for (int row = 0; row < this->rows; row++) {
+        uint8_t* disp_row_ptr = disp_img.ptr(row);
         for (int col = 0; col < this->cols; col++) {
-            unsigned char min_depth = 0;
-            unsigned long min_cost = sum_cost.data(row, col, min_depth);
-            for (int d = 1; d < this->d_range; d++) {
-                unsigned long tmp_cost = sum_cost.data(row, col, d);
-                if (tmp_cost < min_cost) {
-                    min_cost = tmp_cost;
-                    min_depth = d;
+#if CV_SIMD128
+            if(useSIMD_)
+            {
+                unsigned char min_depth = 0;
+                unsigned long min_cost = 0xffff;
+                uint16_t *p_sum = sum_cost.ptr(row, col);
+                for (int d = 0; d < this->d_range; d += 8) {
+                    cv::v_uint16x8 v_sum = cv::v_load_aligned(p_sum + d);
+                    uint16_t l_min = cv::v_reduce_min(v_sum);
+                    if (l_min < min_cost) {
+                        min_depth = d;
+                        min_cost = l_min;
+                    }
                 }
+                for (int i = 0; i < 8; i++) {
+                    if (p_sum[min_depth + i] == min_cost) {
+                        min_depth += i;
+                        break;
+                    }
+                }
+                disp_row_ptr[col] = min_depth;
             }
-            disp_img.at<unsigned char>(row, col) = min_depth;
+            else
+#endif
+            {
+                unsigned char min_depth = 0;
+                unsigned long min_cost = sum_cost.data(row, col, min_depth);
+                for (int d = 1; d < this->d_range; d++) {
+                    unsigned long tmp_cost = sum_cost.data(row, col, d);
+                    if (tmp_cost < min_cost) {
+                        min_cost = tmp_cost;
+                        min_depth = d;
+                    }
+                }
+                disp_row_ptr[col] = min_depth;
+            }
         }
     }
 }
