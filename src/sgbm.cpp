@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include "opencv2/opencv.hpp"
+#include "precomp.hpp"
 
 #include "sgbm.h"
 
@@ -25,6 +26,10 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
     this->gauss_filt = gauss_filt;
     this->show_res = show_res;
     
+#if CV_SIMD128
+    useSIMD_ = cv::hasSIMD128();
+#endif
+
     reset_buffer();
 }
 
@@ -116,25 +121,51 @@ void Sgbm::reset_buffer()
 
 void Sgbm::census_transform(cv::Mat &img, cv::Mat &census)
 {
-    unsigned char * const img_pnt_st = img.data;
-    unsigned char * const census_pnt_st = census.data;
-    
-    for (int row=1; row<rows-1; row++) {
-        for (int col=1; col<cols-1; col++) {
-            
-            unsigned char *center_pnt = img_pnt_st + cols*row + col;
+    uint8_t * const img_pnt_st = img.data;
+    uint8_t * const census_pnt_st = census.data;
+#if CV_SIMD128
+    cv::v_uint16x8 one = cv::v_setall_u16(1);
+#endif
+    for (int row = 1; row < rows - 1; row++) {
+        int colstart = 1;
+        uint8_t *center_pnt_row = img_pnt_st + cols * row + colstart;
+        uint8_t *census_pnt_row = census_pnt_st + cols * row + colstart;
+#if CV_SIMD128
+        if(useSIMD_)
+        {
+            colstart = 8 * ((cols - 2) / 8) + colstart;
+            for (int col = 1; col < colstart; col += 8, center_pnt_row += 8, census_pnt_row += 8) {
+                cv::v_uint16x8 val = cv::v_setzero_u16();
+                cv::v_uint16x8 ref = cv::v_load_expand(center_pnt_row);
+                for (int drow = -1; drow <= 1; drow++) {
+                    for (int dcol = -1; dcol <= 1; dcol++) {
+                        if (drow == 0 && dcol == 0) {
+                            continue;
+                        }
+                        cv::v_uint16x8 test = cv::v_load_expand(center_pnt_row + dcol + drow * cols);
+                        cv::v_uint16x8 cmp = cv::v_min(one, test >= ref);
+                        val = val << 1;
+                        val = (val + cmp);
+                    }
+                }
+                cv::v_pack_store(census_pnt_row, val);
+            }
+        }
+#endif
+        for (int col = colstart; col < cols - 1; col++, center_pnt_row++, census_pnt_row++) {
             unsigned char val = 0;
-            for (int drow=-1; drow<=1; drow++) {
-                for (int dcol=-1; dcol<=1; dcol++) {
-                    
+            for (int drow = -1; drow <= 1; drow++) {
+                for (int dcol = -1; dcol <= 1; dcol++) {
                     if (drow == 0 && dcol == 0) {
                         continue;
                     }
-                    unsigned char tmp = *(center_pnt + dcol + drow*cols);
-                    val = (val + (tmp < *center_pnt ? 0 : 1)) << 1;
+                    unsigned char tmp = *(center_pnt_row + dcol + drow * cols);
+                    val = val << 1;
+                    val = (val + (tmp < *center_pnt_row ? 0 : 1));
                 }
             }
-            *(census_pnt_st + cols*row + col) = val;
+
+            *census_pnt_row = val;
         }
     }
     return;

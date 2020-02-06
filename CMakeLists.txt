@@ -15,6 +15,7 @@ set(LIB_SRC
   src/sgbm.cpp
   src/sgbm.h
   src/sgbm_c.cpp
+  src/precomp.hpp
   )
 
 include_directories(${OpenCV_INCLUDE_DIRS})

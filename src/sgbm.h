@@ -106,6 +106,9 @@ public:
   cost_3d_array sum_cost;
   std::vector<cv::Mat> agg_min;
   ScanLines8 scanlines;
+    
+protected:
+  bool useSIMD_;
 };
 
 
