@@ -87,15 +87,15 @@ int main(int argc, char** argv)
     cv::Mat disp;
     
     auto begin = std::chrono::system_clock::now();
+#if 1
     sgbm.compute_disp(left, right, disp);
-
-//    int NumDisparities = 256;
-//    StereoSGBMParams params(0, NumDisparities, 8, 8 * 64, 32 * 64, 1, 63, 5, 100, 10, cv::StereoSGBM::MODE_SGBM);
-//    cv::Mat disp(left.size(), CV_16UC1), buffer, disp8;
-//    computeDisparitySGBM(left, right, disp, params, buffer);
-//    disp.convertTo(disp8, CV_8U, 255 / (NumDisparities * 16.));
-//    cv::imshow("opencv", disp8);
-
+#else
+    int NumDisparities = 256;
+    StereoSGBMParams params(0, NumDisparities, 8, 8 * 64, 32 * 64, 1, 63, 5, 100, 10, cv::StereoSGBM::MODE_SGBM);
+    cv::Mat disp16(left.size(), CV_16UC1), buffer;
+    computeDisparitySGBM(left, right, disp16, params, buffer);
+    disp16.convertTo(disp, CV_8U, 255 / (NumDisparities * 16.));
+#endif
     auto end = std::chrono::system_clock::now();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "3. costed time=" << milliseconds.count() << std::endl;

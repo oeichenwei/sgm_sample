@@ -1,11 +1,10 @@
 
 #include "opencv2/opencv.hpp"
 
+template <class AGGR_DATA_TYPE>
 class cost_3d_array
 {
 public:
-    typedef uint16_t AGGR_DATA_TYPE;
-    
     cost_3d_array() : rows_(0), cols_(0), drange_(0), data_(nullptr) {
     }
     
@@ -42,7 +41,7 @@ protected:
     AGGR_DATA_TYPE *data_;
 };
 
-typedef cost_3d_array* cost_4d_array;
+typedef cost_3d_array<uint16_t>* cost_4d_array;
 
 class ScanLine {
 public:
@@ -87,11 +86,11 @@ public:
 
   void aggregate_cost_for_each_scanline();
 
-  void calc_disparity(cost_3d_array &sum_cost, cv::Mat &disp_img);
+  void calc_disparity(cv::Mat &disp_img);
 
   void census_transform(cv::Mat &img, cv::Mat &census);
 
-  void calc_pixel_cost(cv::Mat &census_l, cv::Mat &census_r, cost_3d_array &pix_cost);
+  void calc_pixel_cost();
 
   unsigned char calc_hamming_dist(unsigned char val_l, unsigned char val_r);
 
@@ -100,10 +99,10 @@ public:
   bool gauss_filt, show_res;
   int rows, cols, d_range, scanpath;
   unsigned short p1, p2;
-  cv::Mat *census_l, *census_r, *disp_img;
-  cost_3d_array pix_cost;
+  cv::Mat census_l, census_r, disp_img;
+  cost_3d_array<uint8_t> pix_cost;
   cost_4d_array agg_cost;
-  cost_3d_array sum_cost;
+  cost_3d_array<uint16_t> sum_cost;
   std::vector<cv::Mat> agg_min;
   ScanLines8 scanlines;
     

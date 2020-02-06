@@ -17,9 +17,9 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
     this->rows = rows;
     this->cols = cols;
     this->d_range = d_range;
-    this->census_l = new cv::Mat(rows, cols, CV_8UC1);
-    this->census_r = new cv::Mat(rows, cols, CV_8UC1);
-    this->disp_img = new cv::Mat(rows, cols, CV_8UC1);
+    this->census_l = cv::Mat::zeros(rows, cols + d_range, CV_8UC1);
+    this->census_r = cv::Mat::zeros(rows, cols + d_range, CV_8UC1);
+    this->disp_img = cv::Mat::zeros(rows, cols, CV_8UC1);
     this->p1 = p1;
     this->p2 = p2;
     this->scanpath = scanlines.path8.size();
@@ -35,10 +35,6 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
 
 Sgbm::~Sgbm() 
 {
-    if (census_l)
-        delete census_l;
-    if (census_r)
-        delete census_r;
     if (agg_cost)
         delete [] agg_cost;
 }
@@ -58,20 +54,20 @@ void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
     
     auto begin = std::chrono::system_clock::now();
     // 1. Census Transform.
-    census_transform(left, *this->census_l);
-    census_transform(right, *this->census_r);
+    census_transform(left, census_l);
+    census_transform(right, census_r);
     auto end = std::chrono::system_clock::now();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "census compute time=" << milliseconds.count() << std::endl;
 
     if (this->show_res) {
-        cv::imshow("Census Trans Left", *this->census_l);
-        cv::imshow("Census Trans Right", *this->census_r);
+        cv::imshow("Census Trans Left", census_l);
+        cv::imshow("Census Trans Right", census_r);
         cv::waitKey(10);
     }
     
     // 2. Calculate Pixel Cost.
-    calc_pixel_cost(*this->census_l, *this->census_r, this->pix_cost);
+    calc_pixel_cost();
     
     end = std::chrono::system_clock::now();
     milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
@@ -85,14 +81,14 @@ void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
     std::cout << "aggregate compute time=" << milliseconds.count() << std::endl;
     
     // 4. Create Disparity Image.
-    calc_disparity(this->sum_cost, *this->disp_img);
+    calc_disparity(disp_img);
 
     end = std::chrono::system_clock::now();
     milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "calc disparity compute time=" << milliseconds.count() << std::endl;
 
     // Visualize Disparity Image.
-    disp = *this->disp_img;
+    disp = disp_img;
     if (this->show_res) {
         cv::Mat tmp;
         disp.convertTo(tmp, CV_8U, 256.0/this->d_range);
@@ -101,9 +97,6 @@ void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
 
 void Sgbm::reset_buffer() 
 {
-    *(census_l) = 0;
-    *(census_r) = 0;
-    
     // Resize vector for Pix Cost
     pix_cost.reset(rows, cols, d_range);
     sum_cost.reset(rows, cols, d_range);
@@ -111,7 +104,7 @@ void Sgbm::reset_buffer()
     // Resize vector for Agg Cost
     if (agg_cost)
         delete [] agg_cost;
-    agg_cost = new cost_3d_array[scanpath];
+    agg_cost = new cost_3d_array<uint16_t>[scanpath];
     agg_min.resize(scanpath);
     for (int path = 0; path < scanpath; path++) {
         agg_cost[path].reset(rows, cols, d_range);
@@ -129,7 +122,7 @@ void Sgbm::census_transform(cv::Mat &img, cv::Mat &census)
     for (int row = 1; row < rows - 1; row++) {
         int colstart = 1;
         uint8_t *center_pnt_row = img_pnt_st + cols * row + colstart;
-        uint8_t *census_pnt_row = census_pnt_st + cols * row + colstart;
+        uint8_t *census_pnt_row = census_pnt_st + census.cols * row + colstart + d_range;
 #if CV_SIMD128
         if(useSIMD_)
         {
@@ -171,20 +164,52 @@ void Sgbm::census_transform(cv::Mat &img, cv::Mat &census)
     return;
 }
 
-void Sgbm::calc_pixel_cost(cv::Mat &census_l, cv::Mat &census_r, cost_3d_array &pix_cost)
+void Sgbm::calc_pixel_cost()
 {
-    unsigned char * const census_l_ptr_st = census_l.data;
-    unsigned char * const census_r_ptr_st = census_r.data;
-    
-    for (int row = 0; row < this->rows; row++) {
-        for (int col = 0; col < this->cols; col++) {
-            unsigned char val_l = static_cast<unsigned char>(*(census_l_ptr_st + row*cols + col));
-            for (int d = 0; d < this->d_range; d++) {
-                unsigned char val_r = 0;
-                if (col - d >= 0) {
-                    val_r = static_cast<unsigned char>(*(census_r_ptr_st + row*cols + col - d));
+    uint8_t * const census_l_ptr_st = census_l.data;
+    uint8_t * const census_r_ptr_st = census_r.data;
+
+    for (int row = 0; row < rows; row++) {
+        uint8_t *census_l_row_ptr = census_l_ptr_st + row * census_l.cols + d_range;
+        uint8_t *census_r_row_ptr = census_r_ptr_st + row * census_r.cols + d_range;
+        for (int col = 0; col < cols; col++, census_l_row_ptr++) {
+            uint8_t val_l = *census_l_row_ptr;
+            uint8_t* dest = pix_cost.ptr(row, col);
+#if CV_SIMD128
+            if(useSIMD_)
+            {
+                cv::v_uint8x16 ref = cv::v_setall_u8(val_l);
+                for (int d = 0; d < d_range; d += 16, dest += 16) {
+                    cv::v_uint8x16 test = cv::v_load(census_r_row_ptr + col - (d + 16));
+                    cv::v_uint8x16 dist = ref ^ test;
+                    
+                    cv::v_uint16x8 dist16 = cv::v_reinterpret_as_u16(dist);
+                    const cv::v_uint16x8 const77 = cv::v_setall_u16(0x7777);
+                    const cv::v_uint16x8 const33 = cv::v_setall_u16(0x3333);
+                    const cv::v_uint16x8 const11 = cv::v_setall_u16(0x1111);
+                    const cv::v_uint16x8 constFF = cv::v_setall_u16(0x0F0F);
+                    cv::v_uint16x8 dist16_7 = (dist16 >> 1) & const77;
+                    cv::v_uint16x8 dist16_3 = (dist16 >> 2) & const33;
+                    cv::v_uint16x8 dist16_1 = (dist16 >> 3) & const11;
+                    dist16 = dist16 - dist16_7 - dist16_3 - dist16_1;
+                    cv::v_uint16x8 result16 = ((dist16 >> 4) + dist16) & constFF;
+
+                    uint8_t CV_DECL_ALIGNED(32) tmp[16];
+                    cv::v_store_aligned(tmp, cv::v_reinterpret_as_u8(result16));
+                    for (int i = 0; i < 16; i++)
+                        dest[i] = tmp[15 - i];
                 }
-                pix_cost.data(row, col, d) = calc_hamming_dist(val_l, val_r);
+            }
+            else
+#endif
+            {
+                for (int d = 0; d < d_range; d++) {
+                    uint8_t val_r = 0;
+                    if (col - d >= 0) {
+                        val_r = *(census_r_row_ptr + col - d);
+                    }
+                    dest[d] = calc_hamming_dist(val_l, val_r);
+                }
             }
         }
     }
@@ -214,7 +239,7 @@ void Sgbm::aggregate_cost(int row, int col, int path)
     uint16_t val3 = min_prev_d + p2;
     uint16_t* p_agg = agg_cost[path].ptr(row, col);
     uint16_t* p_val = agg_cost[path].ptr(row - drow, col - dcol);
-    uint16_t* p_cost = pix_cost.ptr(row, col);
+    uint8_t* p_cost = pix_cost.ptr(row, col);
     uint16_t* p_sum = sum_cost.ptr(row, col);
     
     for (int depth = 0; depth < d_range; depth++, p_agg++, p_sum++, p_cost++) {
@@ -275,7 +300,7 @@ void Sgbm::aggregate_cost_for_each_scanline()
     }
 }
 
-void Sgbm::calc_disparity(cost_3d_array &sum_cost, cv::Mat &disp_img)
+void Sgbm::calc_disparity(cv::Mat &disp_img)
 {
     for (int row = 0; row < this->rows; row++) {
         for (int col = 0; col < this->cols; col++) {
