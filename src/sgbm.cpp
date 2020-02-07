@@ -100,7 +100,6 @@ void Sgbm::reset_buffer()
     
     // Resize vector for Agg Cost
     agg_min.resize(scanpath);
-    agg_cost.reset(rows, cols, d_range);
     for (int path = 0; path < scanpath; path++) {
         agg_min[path] = cv::Mat::zeros(rows, cols, CV_16UC1);
     }
@@ -223,23 +222,20 @@ unsigned char Sgbm::calc_hamming_dist(unsigned char val_l, unsigned char val_r)
     return dist;
 }
 
-void Sgbm::aggregate_cost(int row, int col, int path)
+void Sgbm::aggregate_cost(int row, int col, bool isEdge, uint16_t* p_val, uint16_t& min_prev_d)
 {
-    int dcol = scanlines.path8[path].dcol;
-    int drow = scanlines.path8[path].drow;
-    bool isEdge = (row - drow < 0 || rows <= row - drow || col - dcol < 0 || cols <= col - dcol);
     uint16_t minAgg = 0xFFFF;
-    uint16_t min_prev_d = isEdge ? 0xFFFF : agg_min[path].at<uint16_t>(row - drow, col - dcol);
-    uint16_t* p_agg = agg_cost.ptr(row, col);
-    uint16_t* p_val = agg_cost.ptr(row - drow, col - dcol);
     uint8_t* p_cost = pix_cost.ptr(row, col);
-    uint16_t* p_sum = sum_cost.ptr(row, col);
     
+    uint16_t CV_DECL_ALIGNED(32) new_agg[d_range];
+    uint16_t* p_agg = new_agg;
+    
+    uint16_t* p_sum = sum_cost.ptr(row, col);
+
 #if CV_SIMD128
     if(useSIMD_)
     {
         cv::v_uint16x8 val3 = cv::v_setall_u16(min_prev_d + p2);
-        const cv::v_uint16x8 vmaxf = cv::v_setall_u16(0xffff);
         const cv::v_uint16x8 vp1 = cv::v_setall_u16(p1);
         const cv::v_uint16x8 vmin_prev = cv::v_setall_u16(min_prev_d);
         for (int depth = 0; depth < d_range; depth += 8, p_agg += 8, p_sum += 8, p_cost += 8) {
@@ -251,15 +247,8 @@ void Sgbm::aggregate_cost(int row, int col, int path)
                 retval = cv::v_setzero_u16();
                 const cv::v_uint16x8 val0 = cv::v_load_aligned(p_val + depth);
                 cv::v_uint16x8 val1, val2;
-                if (depth == 0)
-                    val1 = (val0 >> 16) | vmaxf + vp1;
-                else
-                    val1 = cv::v_load(p_val + depth - 1) + vp1;
-                
-                if (depth == d_range - 9)
-                    val2 = (val0 << 16) | vmaxf + vp1;
-                else
-                    val2 = cv::v_load(p_val + depth + 1) + vp1;
+                val1 = cv::v_load(p_val + depth - 1) + vp1;
+                val2 = cv::v_load(p_val + depth + 1) + vp1;
                 
                 cv::v_uint16x8 val = cv::v_min(val0, val1);
                 val = cv::v_min(val, val2);
@@ -312,30 +301,51 @@ void Sgbm::aggregate_cost(int row, int col, int path)
         }
     }
 
-    agg_min[path].at<uint16_t>(row, col) = minAgg;
+    min_prev_d = minAgg;
+    memcpy(p_val, new_agg, d_range * sizeof(uint16_t));
 }
 
 void Sgbm::aggregate_cost_for_each_scanline()
 {
-    // Cost aggregation for positive direction.
-    for (int path = 0; path < scanlines.path8.size(); path++) {
-        if (scanlines.path8[path].posdir) {
-            for (int row = 0; row < rows; row++) {
-                for (int col = 0; col < cols; col++) {
-                    aggregate_cost(row, col, path);
-                }
-            }
+    bool is_edge = false;
+    uint16_t CV_DECL_ALIGNED(32) last_agg[d_range + 64];
+    uint16_t min_agg = 0xFFFF;
+    uint16_t *offset_agg = last_agg + 32;
+    memset(last_agg, 0xff, (d_range + 64) * sizeof(uint16_t));
+
+    /// Cost aggregation for positive direction.
+    /// left -> right
+    for (int row = 0; row < rows; row++) {
+        is_edge = (row == 0);
+        for (int col = 0; col < cols; col++) {
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
         }
     }
 
-    // Cost aggregation for negative direction.
-    for (int path = 0; path < scanlines.path8.size(); path++) {
-        if (!scanlines.path8[path].posdir) {
-            for (int row = rows - 1; row >= 0; row--) {
-                for (int col = cols - 1; col >= 0; col--) {
-                    aggregate_cost(row, col, path);
-                }
-            }
+    min_agg = 0xFFFF;
+    /// top -> bottom
+    for (int col = 0; col < cols; col++) {
+        is_edge = (col == 0);
+        for (int row = 0; row < rows; row++) {
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+        }
+    }
+
+    min_agg = 0xFFFF;
+    /// right -> left
+    for (int row = rows - 1; row >= 0; row--) {
+        is_edge = (row == rows - 1);
+        for (int col = cols - 1; col >= 0; col--) {
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+        }
+    }
+
+    min_agg = 0xFFFF;
+    /// bottom -> left
+    for (int col = cols - 1; col >= 0; col--) {
+        is_edge = (col == cols - 1);
+        for (int row = rows - 1; row >= 0; row--) {
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
         }
     }
 }

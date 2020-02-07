@@ -64,12 +64,12 @@ class ScanLines8 {
 public:
   ScanLines8() {
     this->path8.push_back(ScanLine(0, 1, true));
-//    this->path8.push_back(ScanLine(1, 1, true));
     this->path8.push_back(ScanLine(1, 0, true));
-//    this->path8.push_back(ScanLine(1, -1, true));
     this->path8.push_back(ScanLine(0, -1, false));
-//    this->path8.push_back(ScanLine(-1, -1, false));
     this->path8.push_back(ScanLine(-1, 0, false));
+//    this->path8.push_back(ScanLine(1, 1, true));
+//    this->path8.push_back(ScanLine(1, -1, true));
+//    this->path8.push_back(ScanLine(-1, -1, false));
 //    this->path8.push_back(ScanLine(-1, 1, false));
   }
   
@@ -88,7 +88,7 @@ public:
 
   void compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp);
 
-  void aggregate_cost(int row, int col, int path);
+  void aggregate_cost(int row, int col, bool isEdge, uint16_t* p_agg, uint16_t& min_agg);
 
   void aggregate_cost_for_each_scanline();
 
@@ -107,7 +107,6 @@ public:
   unsigned short p1, p2;
   cv::Mat census_l, census_r, disp_img;
   cost_3d_array<uint8_t> pix_cost;
-  cost_3d_array<uint16_t> agg_cost;
   cost_3d_array<uint16_t> sum_cost;
   std::vector<cv::Mat> agg_min;
   ScanLines8 scanlines;
