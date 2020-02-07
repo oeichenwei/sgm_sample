@@ -69,7 +69,6 @@ int main(int argc, char** argv)
     std::cout << "SGBM Test Started!" << std::endl;
     
     std::string left_path, right_path;
-    int disp_r = 256;//, p1, p2;
     
     left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-left.png";
     right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-right.png";
@@ -83,11 +82,12 @@ int main(int argc, char** argv)
     
     std::cout << "2. Initialize class" << std::endl;
     
-    Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, false);
     cv::Mat disp;
     
     auto begin = std::chrono::system_clock::now();
 #if 1
+    int disp_r = 256;//, p1, p2;
+    Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, false);
     sgbm.compute_disp(left, right, disp);
 #else
     int NumDisparities = 256;
