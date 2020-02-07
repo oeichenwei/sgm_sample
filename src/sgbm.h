@@ -88,7 +88,7 @@ public:
 
   void compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp);
 
-  void aggregate_cost(int row, int col, bool isEdge, uint16_t* p_agg, uint16_t& min_agg);
+  void aggregate_cost(int row, int col, bool isEdge, uint8_t* p_agg, uint8_t& min_agg, bool initsum);
 
   void aggregate_cost_for_each_scanline();
 
@@ -107,8 +107,7 @@ public:
   unsigned short p1, p2;
   cv::Mat census_l, census_r, disp_img;
   cost_3d_array<uint8_t> pix_cost;
-  cost_3d_array<uint16_t> sum_cost;
-  std::vector<cv::Mat> agg_min;
+  cost_3d_array<uint8_t> sum_cost;
   ScanLines8 scanlines;
     
 protected:

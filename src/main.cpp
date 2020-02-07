@@ -82,12 +82,14 @@ int main(int argc, char** argv)
     
     std::cout << "2. Initialize class" << std::endl;
     
+    int disp_r = 256;//, p1, p2;
+    Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, false);
     cv::Mat disp;
     
     auto begin = std::chrono::system_clock::now();
+    for (int i = 0; i < 10; i++)
+    {
 #if 1
-    int disp_r = 256;//, p1, p2;
-    Sgbm sgbm(left.rows, left.cols, disp_r, 3, 20, true, false);
     sgbm.compute_disp(left, right, disp);
 #else
     int NumDisparities = 256;
@@ -96,6 +98,7 @@ int main(int argc, char** argv)
     computeDisparitySGBM(left, right, disp16, params, buffer);
     disp16.convertTo(disp, CV_8U, 255 / (NumDisparities * 16.));
 #endif
+    }
     auto end = std::chrono::system_clock::now();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "3. costed time=" << milliseconds.count() << std::endl;

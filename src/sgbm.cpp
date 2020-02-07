@@ -36,11 +36,16 @@ Sgbm::~Sgbm()
 {
 }
 
-void Sgbm::compute_disp(cv::Mat &left, cv::Mat &right, cv::Mat &disp)
+void Sgbm::compute_disp(cv::Mat &leftin, cv::Mat &rightin, cv::Mat &disp)
 {
+    cv::Mat left, right;
     if (this->gauss_filt) {
-        cv::GaussianBlur(left, left, cv::Size(3, 3), 3);
-        cv::GaussianBlur(right, right, cv::Size(3, 3), 3);
+        cv::GaussianBlur(leftin, left, cv::Size(3, 3), 3);
+        cv::GaussianBlur(rightin, right, cv::Size(3, 3), 3);
+    }
+    else {
+        left = leftin;
+        right = rightin;
     }
     
     if (this->show_res) {
@@ -97,12 +102,6 @@ void Sgbm::reset_buffer()
     // Resize vector for Pix Cost
     pix_cost.reset(rows, cols, d_range);
     sum_cost.reset(rows, cols, d_range);
-    
-    // Resize vector for Agg Cost
-    agg_min.resize(scanpath);
-    for (int path = 0; path < scanpath; path++) {
-        agg_min[path] = cv::Mat::zeros(rows, cols, CV_16UC1);
-    }
 }
 
 void Sgbm::census_transform(cv::Mat &img, cv::Mat &census)
@@ -222,47 +221,57 @@ unsigned char Sgbm::calc_hamming_dist(unsigned char val_l, unsigned char val_r)
     return dist;
 }
 
-void Sgbm::aggregate_cost(int row, int col, bool isEdge, uint16_t* p_val, uint16_t& min_prev_d)
+void Sgbm::aggregate_cost(int row, int col, bool isEdge, uint8_t* p_val, uint8_t& min_prev_d, bool initsum)
 {
-    uint16_t minAgg = 0xFFFF;
+    uint8_t minAgg = 0xFFFF;
     uint8_t* p_cost = pix_cost.ptr(row, col);
     
-    uint16_t CV_DECL_ALIGNED(32) new_agg[d_range];
-    uint16_t* p_agg = new_agg;
+    uint8_t CV_DECL_ALIGNED(32) new_agg[d_range];
+    uint8_t* p_agg = new_agg;
     
-    uint16_t* p_sum = sum_cost.ptr(row, col);
+    uint8_t* p_sum = sum_cost.ptr(row, col);
 
 #if CV_SIMD128
     if(useSIMD_)
     {
-        cv::v_uint16x8 val3 = cv::v_setall_u16(min_prev_d + p2);
-        const cv::v_uint16x8 vp1 = cv::v_setall_u16(p1);
-        const cv::v_uint16x8 vmin_prev = cv::v_setall_u16(min_prev_d);
-        for (int depth = 0; depth < d_range; depth += 8, p_agg += 8, p_sum += 8, p_cost += 8) {
-            cv::v_uint16x8 retval;
-            cv::v_uint16x8 indiv_cost = cv::v_load_expand(p_cost);
+        cv::v_uint8x16 val3 = cv::v_setall_u8(min_prev_d + p2);
+        const cv::v_uint8x16 vp1 = cv::v_setall_u8(p1);
+        const cv::v_uint8x16 vmin_prev = cv::v_setall_u8(min_prev_d);
+        for (int depth = 0; depth < d_range; depth += 16, p_agg += 16, p_sum += 16, p_cost += 16) {
+            cv::v_uint8x16 retval;
+            cv::v_uint8x16 indiv_cost = cv::v_load_aligned(p_cost);
             if (isEdge) {
                 retval = indiv_cost;
             } else {
-                retval = cv::v_setzero_u16();
-                const cv::v_uint16x8 val0 = cv::v_load_aligned(p_val + depth);
-                cv::v_uint16x8 val1, val2;
+                retval = cv::v_setzero_u8();
+                const cv::v_uint8x16 val0 = cv::v_load_aligned(p_val + depth);
+                cv::v_uint8x16 val1, val2;
                 val1 = cv::v_load(p_val + depth - 1) + vp1;
                 val2 = cv::v_load(p_val + depth + 1) + vp1;
                 
-                cv::v_uint16x8 val = cv::v_min(val0, val1);
+                cv::v_uint8x16 val = cv::v_min(val0, val1);
                 val = cv::v_min(val, val2);
                 val = cv::v_min(val, val3);
                 retval = val + indiv_cost - vmin_prev;
             }
-            cv::v_uint16x8 v_sum = cv::v_load_aligned(p_sum);
-            v_sum = v_sum + retval;
-            uint16_t lmin = cv::v_reduce_min(retval);
+            cv::v_uint16x8 retlow, rethigh;
+            cv::v_expand(retval, retlow, rethigh);
+            uint16_t lmin = cv::v_reduce_min(retlow);
+            uint16_t hmin = cv::v_reduce_min(rethigh);
+
+            lmin = lmin < hmin ? lmin : hmin;
             if (lmin < minAgg)
                 minAgg = lmin;
-            
+
             cv::v_store_aligned(p_agg, retval);
-            cv::v_store_aligned(p_sum, v_sum);
+            if (initsum) {
+                cv::v_store_aligned(p_sum, retval);
+            }
+            else {
+                cv::v_uint8x16 v_sum = cv::v_load_aligned(p_sum);
+                v_sum = v_sum + retval;
+                cv::v_store_aligned(p_sum, v_sum);
+            }
         }
     }
     else
@@ -297,28 +306,31 @@ void Sgbm::aggregate_cost(int row, int col, bool isEdge, uint16_t* p_val, uint16
             *p_agg = retval;
             if (retval < minAgg)
                 minAgg = retval;
-            *p_sum += retval;
+            if (initsum)
+                *p_sum = retval;
+            else
+                *p_sum += retval;
         }
     }
 
     min_prev_d = minAgg;
-    memcpy(p_val, new_agg, d_range * sizeof(uint16_t));
+    memcpy(p_val, new_agg, d_range * sizeof(uint8_t));
 }
 
 void Sgbm::aggregate_cost_for_each_scanline()
 {
     bool is_edge = false;
-    uint16_t CV_DECL_ALIGNED(32) last_agg[d_range + 64];
-    uint16_t min_agg = 0xFFFF;
-    uint16_t *offset_agg = last_agg + 32;
-    memset(last_agg, 0xff, (d_range + 64) * sizeof(uint16_t));
+    uint8_t CV_DECL_ALIGNED(32) last_agg[d_range + 64];
+    uint8_t min_agg = 0xFFFF;
+    uint8_t *offset_agg = last_agg + 32;
+    memset(last_agg, 0xff, (d_range + 64) * sizeof(uint8_t));
 
     /// Cost aggregation for positive direction.
     /// left -> right
     for (int row = 0; row < rows; row++) {
         is_edge = (row == 0);
         for (int col = 0; col < cols; col++) {
-            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg, true);
         }
     }
 
@@ -327,7 +339,7 @@ void Sgbm::aggregate_cost_for_each_scanline()
     for (int col = 0; col < cols; col++) {
         is_edge = (col == 0);
         for (int row = 0; row < rows; row++) {
-            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg, false);
         }
     }
 
@@ -336,7 +348,7 @@ void Sgbm::aggregate_cost_for_each_scanline()
     for (int row = rows - 1; row >= 0; row--) {
         is_edge = (row == rows - 1);
         for (int col = cols - 1; col >= 0; col--) {
-            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg, false);
         }
     }
 
@@ -345,7 +357,7 @@ void Sgbm::aggregate_cost_for_each_scanline()
     for (int col = cols - 1; col >= 0; col--) {
         is_edge = (col == cols - 1);
         for (int row = rows - 1; row >= 0; row--) {
-            aggregate_cost(row, col, is_edge, offset_agg, min_agg);
+            aggregate_cost(row, col, is_edge, offset_agg, min_agg, false);
         }
     }
 }
@@ -360,16 +372,24 @@ void Sgbm::calc_disparity(cv::Mat &disp_img)
             {
                 unsigned char min_depth = 0;
                 unsigned long min_cost = 0xffff;
-                uint16_t *p_sum = sum_cost.ptr(row, col);
-                for (int d = 0; d < this->d_range; d += 8) {
-                    cv::v_uint16x8 v_sum = cv::v_load_aligned(p_sum + d);
-                    uint16_t l_min = cv::v_reduce_min(v_sum);
+                uint8_t *p_sum = sum_cost.ptr(row, col);
+                const cv::v_uint16x8 mask = cv::v_setall_u16(0x00FF);
+                for (int d = 0; d < this->d_range; d += 16) {
+                    cv::v_uint8x16 v_sum = cv::v_load_aligned(p_sum + d);
+                    cv::v_uint16x8 v_sum_l = cv::v_reinterpret_as_u16(v_sum);
+                    uint16_t l_min = cv::v_reduce_min(v_sum_l & mask);
+                    uint16_t r_min = cv::v_reduce_min((v_sum_l >> 8) & mask);
+                    
                     if (l_min < min_cost) {
                         min_depth = d;
                         min_cost = l_min;
                     }
+                    if (r_min < min_cost) {
+                        min_depth = d + 1;
+                        min_cost = r_min;
+                    }
                 }
-                for (int i = 0; i < 8; i++) {
+                for (int i = 0; i < 16; i += 2) {
                     if (p_sum[min_depth + i] == min_cost) {
                         min_depth += i;
                         break;
