@@ -51,7 +51,7 @@ static void calcPixelCostBT( const Mat& img1, const Mat& img2, int y,
     const PixType *row1 = img1.ptr<PixType>(y), *row2 = img2.ptr<PixType>(y);
     PixType *prow1 = buffer + width2*2, *prow2 = prow1 + width*cn*2;
 #if CV_SIMD128
-    bool useSIMD = hasSIMD128();
+    bool useSIMD = CV_SIMD128;
 #endif
     
     tab += tabOfs;
@@ -194,7 +194,7 @@ void computeDisparitySGBM(const Mat& img1, const Mat& img2,
     };
     static const v_uint16x8 v_LSB = v_uint16x8(0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80);
     
-    bool useSIMD = hasSIMD128();
+    bool useSIMD = CV_SIMD128;
 #endif
     
     const int ALIGN = 16;

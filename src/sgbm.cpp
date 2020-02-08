@@ -2,8 +2,8 @@
 #include <iostream>
 #include <string>
 #include <chrono>
-#include "opencv2/opencv.hpp"
 #include "precomp.hpp"
+#include "opencv2/opencv.hpp"
 
 #include "sgbm.h"
 
@@ -26,7 +26,7 @@ Sgbm::Sgbm(int rows, int cols, int d_range, unsigned short p1,
     this->show_res = show_res;
     
 #if CV_SIMD128
-    useSIMD_ = cv::hasSIMD128();
+    useSIMD_ = true;
 #endif
 
     reset_buffer();
@@ -173,6 +173,7 @@ void Sgbm::calc_pixel_cost()
                 cv::v_uint8x16 ref = cv::v_setall_u8(val_l);
                 for (int d = 0; d < d_range; d += 16, dest += 16) {
                     cv::v_uint8x16 test = cv::v_load(census_r_row_ptr + col - (d + 16));
+                    test = cv::v_reverse(test);
                     cv::v_uint8x16 dist = ref ^ test;
                     
                     cv::v_uint16x8 dist16 = cv::v_reinterpret_as_u16(dist);
@@ -186,11 +187,7 @@ void Sgbm::calc_pixel_cost()
                     dist16 = dist16 - dist16_7 - dist16_3 - dist16_1;
                     cv::v_uint16x8 result16 = ((dist16 >> 4) + dist16) & constFF;
 
-                    uint8_t CV_DECL_ALIGNED(32) tmp[16];
-                    cv::v_store_aligned(tmp, cv::v_reinterpret_as_u8(result16));
-                    //v_reverse needs SSE3 or NEON, that can be 1x fast
-                    for (int i = 0; i < 16; i++)
-                        dest[i] = tmp[15 - i];
+                    cv::v_store_aligned(dest, cv::v_reinterpret_as_u8(result16));
                 }
             }
             else

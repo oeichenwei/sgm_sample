@@ -16,9 +16,12 @@
 #include <limits>
 
 #define CV_TRACE_FUNCTION()
+#define __OPENCV_BUILD
 
 #include "opencv2/cvconfig.h"
 #include "opencv2/cv_cpu_config.h"
+#include "opencv2/core/cv_cpu_dispatch.h"
+
 #include "opencv2/core/utility.hpp"
 #include "opencv2/core/cv_cpu_helper.h"
 #include "opencv2/core/hal/intrin.hpp"

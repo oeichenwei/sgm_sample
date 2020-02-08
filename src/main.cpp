@@ -70,8 +70,8 @@ int main(int argc, char** argv)
     
     std::string left_path, right_path;
     
-    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-left.png";
-    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/box-right.png";
+    left_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/top-left.png";
+    right_path = "/Users/wilsonc/works/LOGApp/samples/sgbm/top-right.png";
     
     std::cout << "0. Load parameters from user." << std::endl;
     //recv_console_input(left_path, right_path, disp_r, p1, p2);
@@ -79,7 +79,9 @@ int main(int argc, char** argv)
     std::cout << "1. Open and load images" << std::endl;
     cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
     cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
-    
+//    cv::resize(left, left, cv::Size(left.cols / 2, left.rows / 2));
+//    cv::resize(right, right, cv::Size(right.cols / 2, right.rows / 2));
+
     std::cout << "2. Initialize class" << std::endl;
     
     int disp_r = 256;//, p1, p2;
@@ -87,7 +89,7 @@ int main(int argc, char** argv)
     cv::Mat disp;
     
     auto begin = std::chrono::system_clock::now();
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 1; i++)
     {
 #if 1
     sgbm.compute_disp(left, right, disp);

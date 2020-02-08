@@ -6,7 +6,10 @@ set(CMAKE_CXX_STANDARD 11)
 # CMake Package Collection
 set(OpenCV_STATIC ON)
 set(OpenCV_DIR /Users/wilsonc/makedeps/osx/OpenCV/lib/cmake/opencv4)
-FIND_PACKAGE(OpenCV CONFIG PATHS ${OpenCV_DIR} NO_DEFAULT_PATH)
+set(eigen3_DIR /Users/wilsonc/makedeps/osx/eigen3/share/eigen3/cmake)
+set(Eigen3_DIR /Users/wilsonc/makedeps/osx/eigen3/share/eigen3/cmake)
+find_package(OpenCV CONFIG PATHS ${OpenCV_DIR} NO_DEFAULT_PATH)
+find_package(Eigen3 REQUIRED)
 
 set(LIB_NAME "sgbm_practice")
 
@@ -18,7 +21,7 @@ set(LIB_SRC
   src/precomp.hpp
   )
 
-include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(${OpenCV_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS}/opencv2)
 
 # Generate Exe Files
 add_executable("${LIB_NAME}_test" ${LIB_SRC})
